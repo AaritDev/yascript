@@ -1,0 +1,14 @@
+# Exercises semicolons, newline separators, indentation, repeat 0, and repeat 1.
+repeat 2
+    add 10;
+end
+
+repeat 0
+    add 99;
+end
+
+repeat 1
+    add 1;
+end
+
+print;

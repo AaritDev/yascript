@@ -1,0 +1,5 @@
+# Visual diagnostic error test: missing end for repeat
+repeat 5
+    add 10;
+    rght 2;
+# Notice the missing end keyword here!

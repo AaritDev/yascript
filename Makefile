@@ -1,12 +1,30 @@
-   1 CXX := g++
-   2 CXXFLAGS := -std=c++23 -Wall -Wextra -O2
-   3 TARGET := yascript
-   4 SOURCES := yascript-interface.cpp yascript-parser.cpp yascript-runner.cpp
-   5 
-   6 all: $(TARGET)
-   7 
-   8 $(TARGET): $(SOURCES)
-   9     $(CXX) $(CXXFLAGS) $(SOURCES) -o $(TARGET)
-  10 
-  11 clean:
-  12     rm -f $(TARGET)
+CXX = g++
+CXXFLAGS = -std=c++23 -O3 -march=native -Wall -Wextra -fno-exceptions -Iinclude
+LDFLAGS = -O3
+
+SRCDIR = src
+OBJDIR = build
+BINDIR = bin
+
+SOURCES = $(SRCDIR)/yascript-lexer.cpp $(SRCDIR)/yascript-parser.cpp $(SRCDIR)/yascript-runner.cpp $(SRCDIR)/yascript-interface.cpp
+HEADERS = include/yascript-lexer.hpp include/yascript-parser.hpp include/yascript-runner.hpp include/yascript-interface.hpp
+OBJECTS = $(SOURCES:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
+TARGET = $(BINDIR)/yascript
+
+.PHONY: all clean directories
+
+all: directories $(TARGET)
+
+directories:
+	@mkdir -p $(OBJDIR) $(BINDIR)
+
+$(TARGET): $(OBJECTS)
+	$(CXX) $(LDFLAGS) -o $@ $^
+
+$(OBJDIR)/%.o: $(SRCDIR)/%.cpp $(HEADERS)
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+clean:
+	rm -rf $(OBJDIR) $(BINDIR)
+
+.SILENT: clean directories

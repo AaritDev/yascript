@@ -1,0 +1,2 @@
+# Expected: runtime error because the pointer starts at cell 0.
+left;

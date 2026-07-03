@@ -4,28 +4,32 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <cstdint>
+#include "yascript-lexer.hpp"
 
 namespace yascript {
 
-enum class OpCode {
+enum class OpCode : uint8_t {
     Left,
     Right,
     Add,
-    Min,
+    Sub,
     Set,
     Goto,
     Output,
     Read,
     Print,
     Zero,
-    LoopStart,
-    LoopEnd,
+    RepeatStart,
+    RepeatEnd,
 };
 
 struct Instruction {
     OpCode op;
-    unsigned long long arg;
-    unsigned long long target;
+    uint64_t arg;
+    uint64_t target;
+    uint32_t line;
+    uint32_t column;
 };
 
 struct ParseResult {

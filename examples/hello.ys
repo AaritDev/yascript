@@ -1,0 +1,31 @@
+# Hello World in yascript
+repeat 72 add; end
+output;
+rght;
+repeat 101 add; end
+output;
+rght;
+repeat 108 add; end
+output;
+output;
+rght;
+repeat 111 add; end
+output;
+rght;
+repeat 32 add; end
+output;
+rght;
+repeat 87 add; end
+output;
+rght;
+repeat 111 add; end
+output;
+rght;
+repeat 114 add; end
+output;
+rght;
+repeat 108 add; end
+output;
+rght;
+repeat 100 add; end
+output;

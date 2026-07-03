@@ -1,0 +1,2 @@
+# Expected: parse error with a suggestion to use 'rght'.
+right;

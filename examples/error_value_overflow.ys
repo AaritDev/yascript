@@ -1,0 +1,3 @@
+# Expected: runtime error because uint64 cells cannot exceed this value.
+set 18446744073709551615;
+add;

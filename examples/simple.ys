@@ -1,0 +1,4 @@
+# Example 1: Simple ASCII output
+# Output character 'A' (65)
+set 65
+output

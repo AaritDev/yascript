@@ -1,0 +1,6 @@
+# Prints "OK" while exercising repeat folding and zero/add folding.
+repeat 79 add; end
+output;
+zero;
+repeat 75 add; end
+output;

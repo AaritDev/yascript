@@ -1,0 +1,6 @@
+# Check that tape modifications are correctly preserved before a goto.
+# If the optimizer is buggy, it might remove 'add 10' or 'set 20'.
+add 10;
+goto 5;
+goto 0;
+print; # Should print 10

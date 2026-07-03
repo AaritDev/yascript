@@ -1,0 +1,29 @@
+# Example: Optimizations showcase
+# These are all equivalent but show different optimization patterns
+
+# Pattern 1: Loop unwrapping (repeat N simple_op becomes op N)
+# repeat 65 add; end output
+# Optimized to: add 65, output
+
+# Pattern 2: Consecutive operation merging
+# add 10 add 20 output
+# Optimized to: add 30, output
+
+# Pattern 3: Dead code elimination
+# set 10 set 20 print
+# Optimized to: set 20, print (first set is dead)
+
+# Pattern 4: Constant folding with set
+# set 50 add 15 print
+# Optimized to: set 65, print
+
+# Pattern 5: Zero + add optimization
+# zero add 40 print
+# Optimized to: set 40, print (zero is identity)
+
+# Pattern 6: Goto chaining
+# goto 1 goto 2 add 5 print
+# Optimized to: goto 2, add 5, print (first goto is dead)
+
+# Test: Demonstrate pattern 4
+set 50 add 15 print
