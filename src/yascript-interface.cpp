@@ -62,5 +62,10 @@ int main(int argc, char** argv) {
         return yascript::runSource(argv[2]);
     }
 
-    return yascript::runFile(argv[1]);
+    int result = yascript::runFile(argv[1]);    
+
+    std::cout << '\n';
+
+    return result;  
 }
+
