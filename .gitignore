@@ -1,1 +1,6 @@
 notes.md
+yascript-interface.o
+yascript-lexer.o
+yascript-parser.o
+yascript-runner.o
+
