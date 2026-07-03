@@ -36,7 +36,6 @@ Run from a `.ys` file:
 ```
 
 ### Commands
-|--------------|---------------|------------------------------------------|
 | Command      | Syntax        | Description                              |
 |--------------|---------------|------------------------------------------|
 | Move left    | `left [N]`    | Move pointer N cells left (default 1)    |
@@ -51,7 +50,6 @@ Run from a `.ys` file:
 | Zero cell    | `zero`        | Set current cell to 0                    |
 | Loop start   | `repeat N`    | Start loop, repeat N times               |
 | Loop end     | `end`         | End loop block                           |
-|--------------|---------------|------------------------------------------|
 ## Examples
 
 ### Hello World (`hello.ys`)
