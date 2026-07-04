@@ -1,4 +1,4 @@
-notes.md
+notes/
 yascript-interface.o
 yascript-lexer.o
 yascript-parser.o
