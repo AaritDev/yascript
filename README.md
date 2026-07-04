@@ -119,6 +119,11 @@ Output: `A`
 
 ## Install Scripts
 
+ - Install:
 ```bash
 ./install.sh
+```
+ - Uninstall:
+```bash
 ./uninstall.sh
+```
