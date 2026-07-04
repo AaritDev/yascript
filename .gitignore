@@ -4,4 +4,9 @@ yascript-lexer.o
 yascript-parser.o
 yascript-runner.o
 .directory
+build/
+bin/
+*.o
+*.d
+yascript
 

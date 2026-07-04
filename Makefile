@@ -1,30 +1,45 @@
-CXX = g++
-CXXFLAGS = -std=c++23 -O3 -march=native -Wall -Wextra -fno-exceptions -Iinclude
-LDFLAGS = -O3
+CXX := g++
 
-SRCDIR = src
-OBJDIR = build
-BINDIR = bin
+CXXFLAGS := -std=c++23 -O3 -Wall -Wextra -fno-exceptions -Iinclude
+LDFLAGS :=
 
-SOURCES = $(SRCDIR)/yascript-lexer.cpp $(SRCDIR)/yascript-parser.cpp $(SRCDIR)/yascript-runner.cpp $(SRCDIR)/yascript-interface.cpp
-HEADERS = include/yascript-lexer.hpp include/yascript-parser.hpp include/yascript-runner.hpp include/yascript-interface.hpp
-OBJECTS = $(SOURCES:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
-TARGET = $(BINDIR)/yascript
+ifeq ($(NATIVE),1)
+CXXFLAGS += -march=native
+endif
 
-.PHONY: all clean directories
+SRCDIR := src
+OBJDIR := build
+BINDIR := bin
 
-all: directories $(TARGET)
+TARGET := $(BINDIR)/yascript
+
+SOURCES := $(wildcard $(SRCDIR)/*.cpp)
+OBJECTS := $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(SOURCES))
+DEPS := $(OBJECTS:.o=.d)
+
+.PHONY: all clean test install uninstall directories
+
+all: $(TARGET)
 
 directories:
-	@mkdir -p $(OBJDIR) $(BINDIR)
+	mkdir -p $(OBJDIR) $(BINDIR)
 
-$(TARGET): $(OBJECTS)
-	$(CXX) $(LDFLAGS) -o $@ $^
+$(TARGET): directories $(OBJECTS)
+	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.cpp $(HEADERS)
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+$(OBJDIR)/%.o: $(SRCDIR)/%.cpp | directories
+	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
+
+test: all
+	./tests/run_tests.sh
+
+install: all
+	install -Dm755 $(TARGET) /usr/local/bin/yascript
+
+uninstall:
+	rm -f /usr/local/bin/yascript
 
 clean:
 	rm -rf $(OBJDIR) $(BINDIR)
 
-.SILENT: clean directories
+-include $(DEPS)
