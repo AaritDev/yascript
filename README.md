@@ -93,7 +93,6 @@ Run from a `.ys` file:
 
 ![Yascript error example](docs/assets/pointer-underflow.png)
 
-### Demo Video
 <h2 align="center">Demo</h2>
 
 <p align="center">
