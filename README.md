@@ -8,14 +8,16 @@ A blazingly fast interpreter for Brainfuck-like esoteric language with a modern 
 - **Fast**: Optimized build (`-O3`), optional CPU-specific optimization via `make NATIVE=1`
 - **Modern Syntax**: Readable command names (no `>` and `<`, no `+` and `-`)
 - **Loop Syntax**: Ruby-inspired `repeat N ... end` blocks instead of `[` and `]`
-- **Optimization Pipeline**: Multi-pass optimizer during parsing/execution that:
-  1. Token-based lexer
-  2. Multi-pass optimization
-  3. Buffered output (4KB)
+- **Execution Pipeline**:
+  1. Tokenization
+  2. Parsing
+  3. Multi-pass optimization
   4. Direct execution of optimized instructions
-  5. Optional CPU-specific optimization via `make NATIVE=1`
+  5. Buffered output (4KB)
 
-## Project structure:
+## Project structure
+
+```project map
 yascript/
 ├── src/         # Interpreter implementation
 ├── include/     # Header files
@@ -24,35 +26,17 @@ yascript/
 ├── docs/        # Design and optimization documentation
 ├── Makefile     # Build system
 └── README.md
+```
   
-## Building
+## Install Scripts
 
+ - Install:
 ```bash
-make
+./install.sh
 ```
-
-Optional CPU-optimized build:
-
+ - Uninstall:
 ```bash
-make NATIVE=1
-```
-
-Run tests:
-
-```bash
-make test
-```
-
-Install:
-
-```bash
-sudo make install
-```
-
-Uninstall:
-
-```bash
-sudo make uninstall
+./uninstall.sh
 ```
 
 # NOTE: Requires: g++ with C++23 support (recent GCC/Clang)
@@ -106,12 +90,6 @@ Run from a `.ys` file:
 - Comments: `#` and `//`
 - Extension: `.ys`
 
-## Build
-
-```bash
-make
-```
-
 ## Quick Start
 
 ```bash
@@ -120,15 +98,34 @@ make
 
 Output: `A`
 
-## Install Scripts
+## Building
 
- - Install:
 ```bash
-./install.sh
+make
 ```
- - Uninstall:
+
+Optional CPU-optimized build:
+
 ```bash
-./uninstall.sh
+make NATIVE=1
+```
+
+Run tests:
+
+```bash
+make test
+```
+
+Install:
+
+```bash
+sudo make install
+```
+
+Uninstall:
+
+```bash
+sudo make uninstall
 ```
 
 ## Important
