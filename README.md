@@ -8,11 +8,22 @@ A blazingly fast interpreter for Brainfuck-like esoteric language with a modern 
 - **Modern Syntax**: Readable command names (no `>` and `<`, no `+` and `-`)
 - **Loop Syntax**: Ruby-inspired `repeat N ... end` blocks instead of `[` and `]`
 - **Optimization Pipeline**: Multi-pass optimizer during parsing/execution that:
-  - Merges consecutive operations (`add 3; add 5` → `add 8`)
-  - Collapses loop effects where safe (`repeat 10 add; end` → `add 10`)
-  - Eliminates redundant state changes (`set 10; set 20` → `set 20`)
-  - Performs limited constant folding where semantics are preserved
+  1. Token-based lexer
+  2. Multi-pass optimization
+  3. Buffered output (4KB)
+  4. Direct execution of optimized instructions
+  5. Optional CPU-specific optimization via `make NATIVE=1`
 
+## Project structure:
+yascript/
+├── src/         # Interpreter implementation
+├── include/     # Header files
+├── examples/    # Example .ys programs
+├── tests/       # Test suite
+├── docs/        # Design and optimization documentation
+├── Makefile     # Build system
+└── README.md
+  
 ## Building
 
 ```bash
@@ -43,7 +54,7 @@ Uninstall:
 sudo make uninstall
 ```
 
-Requires: g++ with C++23 support (recent GCC/Clang)
+# NOTE: Requires: g++ with C++23 support (recent GCC/Clang)
 
 ## Usage
 
@@ -77,16 +88,8 @@ Run from a `.ys` file:
 
 ## Examples
 
-### Hello World
-
-```yascript
-repeat 72 add; end
-output;
-rght;
-
-repeat 101 add; end
-output;
-```
+![Yascript syntax example](docs/assets/example.png)
+![Yascript error example](docs/assets/pointer-underflow.png)
 
 ## Language Properties
 
@@ -94,14 +97,6 @@ output;
 - Cells: 64-bit unsigned integers (uint64_t)
 - Comments: `#` and `//`
 - Extension: `.ys`
-
-## Performance
-
-1. Token-based lexer
-2. Multi-pass optimization
-3. Buffered output (4KB)
-4. Direct execution of optimized instructions
-5. Optional CPU-specific optimization via `make NATIVE=1`
 
 ## Build
 
