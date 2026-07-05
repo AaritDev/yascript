@@ -1,3 +1,4 @@
+![Yascript Logo](docs/assets/logo.png)
 # yascript - Fast Tape Interpreter
 
 A blazingly fast interpreter for Brainfuck-like esoteric language with a modern command set and Ruby-inspired syntax.
@@ -89,7 +90,15 @@ Run from a `.ys` file:
 ## Examples
 
 ![Yascript syntax example](docs/assets/example.png)
+
 ![Yascript error example](docs/assets/pointer-underflow.png)
+
+### Demo Video
+<h2 align="center">Demo</h2>
+
+<p align="center">
+  <img src="docs/assets/demo.gif" width="850">
+</p>
 
 ## Language Properties
 
@@ -122,3 +131,7 @@ Output: `A`
 ```bash
 ./uninstall.sh
 ```
+
+## Important
+The image ./docs/assets/logo.png was created using generative AI, or the image is AI generated.
+
