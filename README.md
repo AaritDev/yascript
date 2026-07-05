@@ -1,7 +1,7 @@
 ![Yascript Logo](docs/assets/logo.png)
 # yascript - Fast Tape Interpreter
 
-A blazingly fast interpreter for Brainfuck-like esoteric language with a modern command set and Ruby-inspired syntax.
+A blazingly fast interpreter for Brainfuck-like esoteric language with a modern command set.
 
 ## Features
 
