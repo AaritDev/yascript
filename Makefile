@@ -1,7 +1,8 @@
 CXX := g++
 
-CXXFLAGS := -std=c++23 -O3 -Wall -Wextra -fno-exceptions -Iinclude
-LDFLAGS :=
+CXXFLAGS := -std=c++23 -O3 -Wall -Wextra -fno-exceptions -Iinclude -pipe -flto
+LDFLAGS := 	-flto
+MAKEFLAGS += -j$(shell nproc)
 
 ifeq ($(NATIVE),1)
 CXXFLAGS += -march=native
