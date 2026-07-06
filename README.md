@@ -16,7 +16,7 @@ A blazingly fast interpreter for Brainfuck-like esoteric language with a modern 
 
 ## Project structure
 
-```project map
+```
 yascript/
 ├── src/         # Interpreter implementation
 ├── include/     # Header files
