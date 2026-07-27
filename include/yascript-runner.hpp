@@ -10,6 +10,11 @@
 
 namespace yascript {
 
+struct LoopFrame {
+    uint64_t start;
+    uint64_t remaining;
+};
+
 struct RunResult {
     bool success;
     std::string error;

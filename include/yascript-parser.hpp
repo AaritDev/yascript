@@ -25,11 +25,11 @@ enum class OpCode : uint8_t {
 };
 
 struct Instruction {
-    OpCode op;
     uint64_t arg;
     uint64_t target;
     uint32_t line;
     uint32_t column;
+    OpCode op;
 };
 
 struct ParseResult {

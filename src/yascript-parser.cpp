@@ -75,7 +75,7 @@ private:
     }
 
     Instruction makeInstruction(OpCode op, uint64_t arg, uint64_t target, const Token& token) const {
-        return Instruction{op, arg, target, token.line, token.column};
+        return Instruction{arg, target, token.line, token.column, op};
     }
 
     std::string tokenTextForError(const Token& token) const {
@@ -227,7 +227,7 @@ private:
             }
 
             if (last.op == OpCode::Zero && instr.op == OpCode::Add) {
-                last = Instruction{OpCode::Set, instr.arg, 0, instr.line, instr.column};
+                last = Instruction{instr.arg, 0, instr.line, instr.column, OpCode::Set};
                 changed = true;
                 return true;
             }
@@ -475,7 +475,7 @@ private:
 
                     const size_t endIndex = instructions.size();
                     instructions[startIndex].target = endIndex;
-                    instructions.push_back(Instruction{OpCode::RepeatEnd, 0, startIndex, command.line, command.column});
+                    instructions.push_back(Instruction{0, startIndex, command.line, command.column, OpCode::RepeatEnd});
                     break;
                 }
 
