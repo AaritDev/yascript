@@ -127,6 +127,8 @@ Uninstall:
 sudo make uninstall
 ```
 
+### If you like the project please star it!
+
 ## Important
 The image ./docs/assets/logo.png was created using generative AI, or the image is AI generated.
 
