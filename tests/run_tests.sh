@@ -60,7 +60,7 @@ test_case "newline separator" $'add 5\nadd 10\nprint;' "15"
 test_case "indented block" $'repeat 2\n    add 1;\nend\nprint;' "2"
 test_error_case "missing separator" "add print;" "missing statement separator"
 test_error_case "repeat missing separator" "repeat 2 add end" "missing statement separator"
-test_error_case "unknown command suggestion" "right;" "did you mean 'rght'"
+test_error_case "unknown command suggestion" "right;" "unexpected identifier 'right'"
 test_error_case "missing number argument" "set;" "set expects a number argument"
 test_error_case "number out of range" "add 18446744073709551616;" "number is out of uint64 range"
 
@@ -78,7 +78,7 @@ test_error_case "pointer underflow message" "left;" "pointer underflow"
 # Visual Diagnostics & Goto Correctness
 test_error_case "visual caret error indicators" "add print;" "^^^^^"
 test_case "cyclic goto compilation does not hang" "goto 0; print;" "0"
-test_error_case "unmatched repeat points to repeat line" $'repeat 10\nadd 5;' "missing 'end' for repeat at line 1"
+test_error_case "unmatched repeat points to repeat line" $'repeat 10\nadd 5;' "missing 'end' for block starting at line 1"
 test_case "goto preservation of cell values" "add 10; goto 5; goto 0; print;" "10"
 
 

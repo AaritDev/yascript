@@ -4,6 +4,7 @@
 
 #include <charconv>
 #include <limits>
+#include <unordered_map>
 
 namespace yascript {
 
@@ -42,10 +43,30 @@ bool isFoldableRepeatOp(OpCode op) {
 
 class Parser {
 private:
+    struct Variable {
+        uint64_t cellIndex;
+        bool isConstant;
+        Token token;
+    };
+
     std::vector<Token> tokens_;
     size_t pos_ = 0;
     std::string error_;
     std::string_view source_;
+
+    std::unordered_map<std::string, Variable> symbolTable_;
+    uint64_t nextFreeCell_ = 0;
+    uint64_t tempCounter_ = 0;
+
+    uint64_t allocateTemp() {
+        return nextFreeCell_ + tempCounter_++;
+    }
+
+    void freeTemp() {
+        if (tempCounter_ > 0) {
+            tempCounter_--;
+        }
+    }
 
     const Token& current() const {
         return pos_ < tokens_.size() ? tokens_[pos_] : tokens_.back();
@@ -260,8 +281,10 @@ private:
 
             std::vector<Instruction> optimized;
             optimized.reserve(instructions.size());
+            std::vector<size_t> oldToNew(instructions.size(), 0);
 
             for (size_t i = 0; i < instructions.size(); ++i) {
+                oldToNew[i] = optimized.size();
                 const Instruction instr = instructions[i];
 
                 if (instr.op == OpCode::RepeatStart) {
@@ -329,6 +352,18 @@ private:
                 appendInstruction(optimized, instr, changed);
             }
 
+            // Update all targets using oldToNew map
+            for (auto& instr : optimized) {
+                if (instr.op == OpCode::RepeatStart || instr.op == OpCode::RepeatEnd ||
+                    instr.op == OpCode::Jump || instr.op == OpCode::JumpIfFalse) {
+                    if (instr.target < oldToNew.size()) {
+                        instr.target = oldToNew[instr.target];
+                    } else {
+                        instr.target = optimized.size();
+                    }
+                }
+            }
+
             instructions = std::move(optimized);
         }
 
@@ -336,7 +371,172 @@ private:
         return true;
     }
 
-    bool parseStatements(std::vector<Instruction>& instructions, bool stopAtEnd, const Token& startToken = Token{}) {
+    uint64_t parseExpression(std::vector<Instruction>& instructions) {
+        return parseAssignment(instructions);
+    }
+
+    uint64_t parseAssignment(std::vector<Instruction>& instructions) {
+        if (current().type == TokenType::Identifier && (pos_ + 1 < tokens_.size() && tokens_[pos_ + 1].type == TokenType::Equal)) {
+            Token varToken = current();
+            advance(); // identifier
+            advance(); // '='
+            
+            uint64_t valCell = parseAssignment(instructions);
+            if (valCell == std::numeric_limits<uint64_t>::max()) return valCell;
+            
+            std::string varName(varToken.text);
+            auto it = symbolTable_.find(varName);
+            if (it == symbolTable_.end()) {
+                setError(syntaxError("undefined variable '" + varName + "'", varToken));
+                return std::numeric_limits<uint64_t>::max();
+            }
+            if (it->second.isConstant) {
+                setError(syntaxError("cannot reassign constant '" + varName + "'", varToken));
+                return std::numeric_limits<uint64_t>::max();
+            }
+            
+            instructions.push_back(makeInstruction(OpCode::Copy, valCell, it->second.cellIndex, varToken));
+            if (valCell >= nextFreeCell_) {
+                freeTemp();
+            }
+            return it->second.cellIndex;
+        }
+        return parseComparison(instructions);
+    }
+
+    uint64_t parseComparison(std::vector<Instruction>& instructions) {
+        uint64_t lhs = parseTerm(instructions);
+        if (lhs == std::numeric_limits<uint64_t>::max()) return lhs;
+        
+        while (current().type == TokenType::EqualEqual || current().type == TokenType::BangEqual ||
+               current().type == TokenType::Less || current().type == TokenType::LessEqual ||
+               current().type == TokenType::Greater || current().type == TokenType::GreaterEqual) {
+            Token opTok = current();
+            advance();
+            
+            uint64_t rhs = parseTerm(instructions);
+            if (rhs == std::numeric_limits<uint64_t>::max()) return rhs;
+            
+            if (lhs < nextFreeCell_) {
+                uint64_t temp = allocateTemp();
+                instructions.push_back(makeInstruction(OpCode::Copy, lhs, temp, opTok));
+                lhs = temp;
+            }
+            
+            OpCode op;
+            if (opTok.type == TokenType::EqualEqual) op = OpCode::CompareEqual;
+            else if (opTok.type == TokenType::BangEqual) op = OpCode::CompareNotEqual;
+            else if (opTok.type == TokenType::Less) op = OpCode::CompareLess;
+            else if (opTok.type == TokenType::LessEqual) op = OpCode::CompareLessEqual;
+            else if (opTok.type == TokenType::Greater) op = OpCode::CompareGreater;
+            else op = OpCode::CompareGreaterEqual;
+            
+            instructions.push_back(makeInstruction(op, rhs, lhs, opTok));
+            if (rhs >= nextFreeCell_) {
+                freeTemp();
+            }
+        }
+        return lhs;
+    }
+
+    uint64_t parseTerm(std::vector<Instruction>& instructions) {
+        uint64_t lhs = parseFactor(instructions);
+        if (lhs == std::numeric_limits<uint64_t>::max()) return lhs;
+        
+        while (current().type == TokenType::Plus || current().type == TokenType::Minus) {
+            Token opTok = current();
+            advance();
+            
+            uint64_t rhs = parseFactor(instructions);
+            if (rhs == std::numeric_limits<uint64_t>::max()) return rhs;
+            
+            if (lhs < nextFreeCell_) {
+                uint64_t temp = allocateTemp();
+                instructions.push_back(makeInstruction(OpCode::Copy, lhs, temp, opTok));
+                lhs = temp;
+            }
+            
+            OpCode op = (opTok.type == TokenType::Plus) ? OpCode::AddVar : OpCode::SubVar;
+            instructions.push_back(makeInstruction(op, rhs, lhs, opTok));
+            if (rhs >= nextFreeCell_) {
+                freeTemp();
+            }
+        }
+        return lhs;
+    }
+
+    uint64_t parseFactor(std::vector<Instruction>& instructions) {
+        uint64_t lhs = parsePrimary(instructions);
+        if (lhs == std::numeric_limits<uint64_t>::max()) return lhs;
+        
+        while (current().type == TokenType::Star || current().type == TokenType::Slash || current().type == TokenType::Percent) {
+            Token opTok = current();
+            advance();
+            
+            uint64_t rhs = parsePrimary(instructions);
+            if (rhs == std::numeric_limits<uint64_t>::max()) return rhs;
+            
+            if (lhs < nextFreeCell_) {
+                uint64_t temp = allocateTemp();
+                instructions.push_back(makeInstruction(OpCode::Copy, lhs, temp, opTok));
+                lhs = temp;
+            }
+            
+            OpCode op;
+            if (opTok.type == TokenType::Star) op = OpCode::MulVar;
+            else if (opTok.type == TokenType::Slash) op = OpCode::DivVar;
+            else op = OpCode::ModVar;
+            
+            instructions.push_back(makeInstruction(op, rhs, lhs, opTok));
+            if (rhs >= nextFreeCell_) {
+                freeTemp();
+            }
+        }
+        return lhs;
+    }
+
+    uint64_t parsePrimary(std::vector<Instruction>& instructions) {
+        const Token tok = current();
+        if (tok.type == TokenType::Number) {
+            uint64_t val = 0;
+            if (!parseNumber(val, "primary")) {
+                return std::numeric_limits<uint64_t>::max();
+            }
+            uint64_t temp = allocateTemp();
+            instructions.push_back(makeInstruction(OpCode::Goto, temp, 0, tok));
+            instructions.push_back(makeInstruction(OpCode::Set, val, 0, tok));
+            return temp;
+        }
+        
+        if (tok.type == TokenType::Identifier) {
+            std::string name(tok.text);
+            advance();
+            auto it = symbolTable_.find(name);
+            if (it == symbolTable_.end()) {
+                setError(syntaxError("undefined variable '" + name + "'", tok));
+                return std::numeric_limits<uint64_t>::max();
+            }
+            return it->second.cellIndex;
+        }
+        
+        if (tok.type == TokenType::OpenParen) {
+            advance(); // '('
+            uint64_t cell = parseExpression(instructions);
+            if (cell == std::numeric_limits<uint64_t>::max()) return cell;
+            
+            if (current().type != TokenType::CloseParen) {
+                setError(syntaxError("expected ')' after expression, got " + tokenTextForError(current())));
+                return std::numeric_limits<uint64_t>::max();
+            }
+            advance(); // ')'
+            return cell;
+        }
+        
+        setError(syntaxError("expected expression, got " + tokenTextForError(tok)));
+        return std::numeric_limits<uint64_t>::max();
+    }
+
+    bool parseStatements(std::vector<Instruction>& instructions, bool stopAtEnd, bool stopAtElse = false, const Token& startToken = Token{}) {
         while (true) {
             bool statementWasRepeat = false;
 
@@ -353,10 +553,18 @@ private:
                 return false;
             }
 
+            if (current().type == TokenType::Else) {
+                if (stopAtElse) {
+                    return true;
+                }
+                setError(syntaxError("unexpected 'else'"));
+                return false;
+            }
+
             switch (current().type) {
                 case TokenType::End:
                     if (stopAtEnd) {
-                        std::string msg = "missing 'end' for repeat at line " + std::to_string(startToken.line) +
+                        std::string msg = "missing 'end' for block starting at line " + std::to_string(startToken.line) +
                                          ", column " + std::to_string(startToken.column);
                         setError(formatDiagnostic(source_, startToken.line, startToken.column, startToken.text.empty() ? 1 : startToken.text.length(), msg));
                         return false;
@@ -429,27 +637,6 @@ private:
                     break;
                 }
 
-                case TokenType::Output: {
-                    const Token command = current();
-                    advance();
-                    instructions.push_back(makeInstruction(OpCode::Output, 0, 0, command));
-                    break;
-                }
-
-                case TokenType::Read: {
-                    const Token command = current();
-                    advance();
-                    instructions.push_back(makeInstruction(OpCode::Read, 0, 0, command));
-                    break;
-                }
-
-                case TokenType::Print: {
-                    const Token command = current();
-                    advance();
-                    instructions.push_back(makeInstruction(OpCode::Print, 0, 0, command));
-                    break;
-                }
-
                 case TokenType::Zero: {
                     const Token command = current();
                     advance();
@@ -469,13 +656,196 @@ private:
                     const size_t startIndex = instructions.size();
                     instructions.push_back(makeInstruction(OpCode::RepeatStart, count, 0, command));
 
-                    if (!parseStatements(instructions, true, command)) {
+                    if (!parseStatements(instructions, true, false, command)) {
                         return false;
                     }
 
                     const size_t endIndex = instructions.size();
                     instructions[startIndex].target = endIndex;
                     instructions.push_back(Instruction{0, startIndex, command.line, command.column, OpCode::RepeatEnd});
+                    break;
+                }
+
+                case TokenType::Let:
+                case TokenType::Const: {
+                    bool isConst = (current().type == TokenType::Const);
+                    Token declTok = current();
+                    advance(); // let/const
+                    
+                    if (current().type != TokenType::Identifier) {
+                        setError(syntaxError("expected identifier after let/const", current()));
+                        return false;
+                    }
+                    Token varTok = current();
+                    std::string varName(varTok.text);
+                    advance();
+                    
+                    if (symbolTable_.find(varName) != symbolTable_.end()) {
+                        setError(syntaxError("variable '" + varName + "' is already declared", varTok));
+                        return false;
+                    }
+                    
+                    uint64_t varCell = nextFreeCell_++;
+                    symbolTable_[varName] = Variable{varCell, isConst, varTok};
+                    
+                    if (current().type == TokenType::Equal) {
+                        advance(); // '='
+                        uint64_t valCell = parseExpression(instructions);
+                        if (valCell == std::numeric_limits<uint64_t>::max()) return false;
+                        
+                        instructions.push_back(makeInstruction(OpCode::Copy, valCell, varCell, declTok));
+                        if (valCell >= nextFreeCell_) {
+                            freeTemp();
+                        }
+                    } else {
+                        if (isConst) {
+                            setError(syntaxError("const declaration requires an initializer", varTok));
+                            return false;
+                        }
+                        instructions.push_back(makeInstruction(OpCode::Goto, varCell, 0, declTok));
+                        instructions.push_back(makeInstruction(OpCode::Zero, 0, 0, declTok));
+                    }
+                    statementWasRepeat = true;
+                    break;
+                }
+
+                case TokenType::Identifier: {
+                    if (pos_ + 1 < tokens_.size() && tokens_[pos_ + 1].type == TokenType::Equal) {
+                        uint64_t valCell = parseAssignment(instructions);
+                        if (valCell == std::numeric_limits<uint64_t>::max()) return false;
+                        statementWasRepeat = true;
+                    } else {
+                        setError(syntaxError("unexpected identifier '" + std::string(current().text) + "'"));
+                        return false;
+                    }
+                    break;
+                }
+
+                case TokenType::If: {
+                    Token ifTok = current();
+                    advance(); // if
+                    
+                    uint64_t condCell = parseExpression(instructions);
+                    if (condCell == std::numeric_limits<uint64_t>::max()) return false;
+                    
+                    size_t jumpIfFalseIdx = instructions.size();
+                    instructions.push_back(makeInstruction(OpCode::JumpIfFalse, condCell, 0, ifTok));
+                    if (condCell >= nextFreeCell_) {
+                        freeTemp();
+                    }
+                    
+                    if (!parseStatements(instructions, true, true, ifTok)) {
+                        return false;
+                    }
+                    
+                    if (current().type == TokenType::Else) {
+                        advance(); // consume 'else'
+                        
+                        size_t jumpIdx = instructions.size();
+                        instructions.push_back(makeInstruction(OpCode::Jump, 0, 0, ifTok));
+                        
+                        instructions[jumpIfFalseIdx].target = instructions.size();
+                        
+                        if (!parseStatements(instructions, true, false, ifTok)) {
+                            return false;
+                        }
+                        
+                        instructions[jumpIdx].target = instructions.size();
+                    } else {
+                        instructions[jumpIfFalseIdx].target = instructions.size();
+                    }
+                    statementWasRepeat = true;
+                    break;
+                }
+
+                case TokenType::While: {
+                    Token whileTok = current();
+                    advance(); // while
+                    
+                    size_t startIdx = instructions.size();
+                    
+                    uint64_t condCell = parseExpression(instructions);
+                    if (condCell == std::numeric_limits<uint64_t>::max()) return false;
+                    
+                    size_t jumpIfFalseIdx = instructions.size();
+                    instructions.push_back(makeInstruction(OpCode::JumpIfFalse, condCell, 0, whileTok));
+                    if (condCell >= nextFreeCell_) {
+                        freeTemp();
+                    }
+                    
+                    if (!parseStatements(instructions, true, false, whileTok)) {
+                        return false;
+                    }
+                    
+                    instructions.push_back(makeInstruction(OpCode::Jump, 0, startIdx, whileTok));
+                    instructions[jumpIfFalseIdx].target = instructions.size();
+                    statementWasRepeat = true;
+                    break;
+                }
+
+                case TokenType::Print: {
+                    const Token command = current();
+                    advance();
+                    if (isSeparator(current().type) || current().type == TokenType::End ||
+                        current().type == TokenType::EndKeyword || current().type == TokenType::Else) {
+                        instructions.push_back(makeInstruction(OpCode::Print, 0, 0, command));
+                    } else {
+                        uint64_t valCell = parseExpression(instructions);
+                        if (valCell == std::numeric_limits<uint64_t>::max()) return false;
+                        instructions.push_back(makeInstruction(OpCode::PrintVar, valCell, 0, command));
+                        if (valCell >= nextFreeCell_) {
+                            freeTemp();
+                        }
+                        statementWasRepeat = true;
+                    }
+                    break;
+                }
+
+                case TokenType::Output: {
+                    const Token command = current();
+                    advance();
+                    if (isSeparator(current().type) || current().type == TokenType::End ||
+                        current().type == TokenType::EndKeyword || current().type == TokenType::Else) {
+                        instructions.push_back(makeInstruction(OpCode::Output, 0, 0, command));
+                    } else {
+                        uint64_t valCell = parseExpression(instructions);
+                        if (valCell == std::numeric_limits<uint64_t>::max()) return false;
+                        instructions.push_back(makeInstruction(OpCode::OutputVar, valCell, 0, command));
+                        if (valCell >= nextFreeCell_) {
+                            freeTemp();
+                        }
+                        statementWasRepeat = true;
+                    }
+                    break;
+                }
+
+                case TokenType::Read: {
+                    const Token command = current();
+                    advance();
+                    if (isSeparator(current().type) || current().type == TokenType::End ||
+                        current().type == TokenType::EndKeyword || current().type == TokenType::Else) {
+                        instructions.push_back(makeInstruction(OpCode::Read, 0, 0, command));
+                    } else {
+                        if (current().type != TokenType::Identifier) {
+                            setError(syntaxError("expected identifier after read", current()));
+                            return false;
+                        }
+                        Token varTok = current();
+                        std::string varName(varTok.text);
+                        advance();
+                        
+                        auto it = symbolTable_.find(varName);
+                        if (it == symbolTable_.end()) {
+                            setError(syntaxError("undefined variable '" + varName + "'", varTok));
+                            return false;
+                        }
+                        if (it->second.isConstant) {
+                            setError(syntaxError("cannot read into constant '" + varName + "'", varTok));
+                            return false;
+                        }
+                        instructions.push_back(makeInstruction(OpCode::ReadVar, it->second.cellIndex, 0, command));
+                        statementWasRepeat = true;
+                    }
                     break;
                 }
 
@@ -488,23 +858,20 @@ private:
                     return false;
             }
 
+            // Block statements (if, while, let, const, repeat, assignment) don't require a trailing separator
+            if (statementWasRepeat) {
+                continue;
+            }
+
+            // Simple statements always require a separator before the next token
             if (current().type == TokenType::End) {
                 if (stopAtEnd) {
-                    std::string msg = "missing 'end' for repeat at line " + std::to_string(startToken.line) +
+                    std::string msg = "missing 'end' for block starting at line " + std::to_string(startToken.line) +
                                      ", column " + std::to_string(startToken.column);
                     setError(formatDiagnostic(source_, startToken.line, startToken.column, startToken.text.empty() ? 1 : startToken.text.length(), msg));
                     return false;
                 }
-                if (statementWasRepeat) {
-                    return true;
-                }
-                setError(syntaxError("missing statement separator"));
-                return false;
-            }
-
-            if (current().type == TokenType::EndKeyword) {
-                setError(syntaxError("missing statement separator"));
-                return false;
+                return true;
             }
 
             if (!isSeparator(current().type)) {
@@ -521,6 +888,9 @@ public:
         tokens_.clear();
         pos_ = 0;
         error_.clear();
+        symbolTable_.clear();
+        nextFreeCell_ = 0;
+        tempCounter_ = 0;
 
         Lexer lexer(source);
         Token tok;

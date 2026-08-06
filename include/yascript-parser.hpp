@@ -22,6 +22,23 @@ enum class OpCode : uint8_t {
     Zero,
     RepeatStart,
     RepeatEnd,
+    Copy,
+    AddVar,
+    SubVar,
+    MulVar,
+    DivVar,
+    ModVar,
+    CompareEqual,
+    CompareNotEqual,
+    CompareLess,
+    CompareLessEqual,
+    CompareGreater,
+    CompareGreaterEqual,
+    Jump,
+    JumpIfFalse,
+    PrintVar,
+    OutputVar,
+    ReadVar,
 };
 
 struct Instruction {

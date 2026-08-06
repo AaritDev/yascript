@@ -59,10 +59,83 @@ Token Lexer::next() {
     uint32_t startCol = column_;
     size_t start = pos_;
 
-    if (source_[pos_] == ';') {
+    char c = source_[pos_];
+    if (c == ';') {
         ++pos_;
         ++column_;
         return Token{TokenType::Semicolon, ";", line_, startCol};
+    }
+    if (c == '+') {
+        ++pos_;
+        ++column_;
+        return Token{TokenType::Plus, "+", line_, startCol};
+    }
+    if (c == '-') {
+        ++pos_;
+        ++column_;
+        return Token{TokenType::Minus, "-", line_, startCol};
+    }
+    if (c == '*') {
+        ++pos_;
+        ++column_;
+        return Token{TokenType::Star, "*", line_, startCol};
+    }
+    if (c == '/') {
+        ++pos_;
+        ++column_;
+        return Token{TokenType::Slash, "/", line_, startCol};
+    }
+    if (c == '%') {
+        ++pos_;
+        ++column_;
+        return Token{TokenType::Percent, "%", line_, startCol};
+    }
+    if (c == '(') {
+        ++pos_;
+        ++column_;
+        return Token{TokenType::OpenParen, "(", line_, startCol};
+    }
+    if (c == ')') {
+        ++pos_;
+        ++column_;
+        return Token{TokenType::CloseParen, ")", line_, startCol};
+    }
+    if (c == '=') {
+        ++pos_;
+        ++column_;
+        if (pos_ < source_.size() && source_[pos_] == '=') {
+            ++pos_;
+            ++column_;
+            return Token{TokenType::EqualEqual, "==", line_, startCol};
+        }
+        return Token{TokenType::Equal, "=", line_, startCol};
+    }
+    if (c == '!') {
+        if (pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
+            pos_ += 2;
+            column_ += 2;
+            return Token{TokenType::BangEqual, "!=", line_, startCol};
+        }
+    }
+    if (c == '<') {
+        ++pos_;
+        ++column_;
+        if (pos_ < source_.size() && source_[pos_] == '=') {
+            ++pos_;
+            ++column_;
+            return Token{TokenType::LessEqual, "<=", line_, startCol};
+        }
+        return Token{TokenType::Less, "<", line_, startCol};
+    }
+    if (c == '>') {
+        ++pos_;
+        ++column_;
+        if (pos_ < source_.size() && source_[pos_] == '=') {
+            ++pos_;
+            ++column_;
+            return Token{TokenType::GreaterEqual, ">=", line_, startCol};
+        }
+        return Token{TokenType::Greater, ">", line_, startCol};
     }
 
     if (std::isdigit(static_cast<unsigned char>(source_[pos_]))) {
@@ -93,8 +166,13 @@ Token Lexer::next() {
         if (word == "zero") return makeToken(TokenType::Zero, start, pos_);
         if (word == "repeat") return makeToken(TokenType::Repeat, start, pos_);
         if (word == "end") return makeToken(TokenType::EndKeyword, start, pos_);
+        if (word == "let") return makeToken(TokenType::Let, start, pos_);
+        if (word == "const") return makeToken(TokenType::Const, start, pos_);
+        if (word == "if") return makeToken(TokenType::If, start, pos_);
+        if (word == "else") return makeToken(TokenType::Else, start, pos_);
+        if (word == "while") return makeToken(TokenType::While, start, pos_);
 
-        return Token{TokenType::Error, word, line_, startCol};
+        return makeToken(TokenType::Identifier, start, pos_);
     }
 
     ++pos_;

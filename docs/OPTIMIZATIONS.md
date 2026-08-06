@@ -1,310 +1,203 @@
 # yascript Optimizations Guide
 
-This document explains all the compile-time optimizations performed by the yascript interpreter during the parsing and compilation phase.
+This document describes the compile-time optimizations currently performed by the yascript parser and the lowering details that matter for those optimizations.
 
 ## Overview
 
-The yascript optimizer uses a **multi-pass peephole optimization** strategy that repeatedly scans the instruction stream looking for patterns it can simplify. The optimizer continues making passes until no more optimizations are possible (with a safety limit of 50 passes).
+yascript lowers source code into a tape-VM instruction stream, then runs a **multi-pass peephole optimizer**. Each pass scans the instruction stream, folds local patterns, removes redundant instructions, and then remaps repeat/jump targets so control flow still points at the correct optimized instruction indexes.
 
-Blocks terminate with `end`; simple statements terminate with `;` or a newline.
+The optimizer repeats until no pass changes the program, with a safety limit of 50 passes.
+
+## Lowering Model
+
+Low-level tape commands map directly to VM instructions:
+
+```yascript
+add 10
+rght
+set 65
+output
+```
+
+The scripting layer lowers to cell-based VM operations:
+
+```ruby
+let a = 40
+let b = 2
+let c = a + b
+print c
+```
+
+That uses variable cells plus temporary cells and emits instructions such as `Copy`, `AddVar`, and `PrintVar`. `if`, `else`, and `while` lower to `JumpIfFalse` and `Jump` instructions whose targets are back-patched after parsing.
+
+Variables and constants are resolved at parse time. They have no name lookup during VM execution.
 
 ## Optimization Patterns
 
-### 1. Loop Unwrapping: `repeat N simple_op; end` → `op N`
+### 1. Repeat Unwrapping
 
-**Pattern**: A repeat block containing exactly one simple operation
-
-```yascript
-repeat 74 add; end      # Unwraps to: add 74
-repeat 10 left; end     # Unwraps to: left 10
-repeat 5 sub; end       # Unwraps to: sub 5
-```
-
-**Why**: Loop overhead is eliminated; the operation is simply multiplied by the count.
-
-**Edge Case**: 
-```yascript
-repeat 1 add; end       # Unwraps to: add 1 (and then may merge with adjacent adds)
-```
-
----
-
-### 2. Empty Loop Elimination: `repeat 0` or `repeat 1` blocks → `...`
-
-**Pattern**: A repeat block with count of 1
+**Pattern**: `repeat N simple_op; end` becomes a single multiplied operation when the body is foldable.
 
 ```yascript
-repeat 1 add; end       # Becomes: add 1
-repeat 1 left; end      # Becomes: left 1
-
-repeat 0 add; end       # Becomes: nothing
-repeat 0 print; end     # Becomes: nothing
+repeat 74 add; end      # add 74
+repeat 10 left; end     # left 10
+repeat 5 sub; end       # sub 5
+repeat 42 add 2; end    # add 84
 ```
 
-**Why**: Repeating once is equivalent to the body; repeating zero times is a no-op.
+Foldable repeat body operations are `add`, `sub`, `left`, `rght`, `set`, and `zero`.
 
----
+### 2. Empty and Single-Run Repeat Handling
 
-### 3. Repeat Body Folding
-
-**Pattern**: A repeat block with a single pure instruction
+**Pattern**: `repeat 0` blocks are removed; `repeat 1` blocks are unwrapped.
 
 ```yascript
-repeat 42 add 2; end    # Becomes: add 84
-repeat 7 zero; end      # Becomes: zero
-repeat 5 set 99; end    # Becomes: set 99
+repeat 0 add; end       # removed
+repeat 1 add 5; end     # add 5
+repeat 1 zero; end      # zero
 ```
 
-**Why**: Pure single-instruction blocks can be collapsed safely before execution.
+### 3. Consecutive Operation Merging
 
----
-
-### 4. Consecutive Operation Merging
-
-**Pattern**: Two consecutive operations of the same type
+**Pattern**: Adjacent operations of the same arithmetic or pointer type are merged.
 
 ```yascript
-add 10; add 20;                  # Becomes: add 30
-left 5; left 3;                  # Becomes: left 8
-sub 100; sub 50;                 # Becomes: sub 150
-rght 1; rght 1; rght 1; rght 1;  # Becomes: rght 4
+add 10; add 20;                  # add 30
+left 5; left 3;                  # left 8
+sub 100; sub 50;                 # sub 150
+rght 1; rght 1; rght 1; rght 1;  # rght 4
 ```
 
-**Why**: Fewer instructions = faster execution.
+This applies to `add`, `sub`, `left`, and `rght`.
 
-**Applies to**: `add`, `sub`, `left`, `right`
+### 4. Constant Folding on Current Cell
 
----
-
-### 5. Constant Folding: `set X; add Y` → `set (X+Y)`
-
-**Pattern**: Set followed by arithmetic operation on same cell
+**Pattern**: Known current-cell values are folded through immediate arithmetic.
 
 ```yascript
-set 50; add 15;      # Becomes: set 65
-set 100; add 200;    # Becomes: set 300
-set 100; sub 30;     # Becomes: set 70 (if 100 >= 30)
+set 50; add 15;      # set 65
+set 100; sub 30;     # set 70
+set 0;               # zero
 ```
 
-**Why**: Evaluate arithmetic at compile time.
+Constraints:
 
-**Constraints**:
-- For `add`: Only applies when the folded value fits in `uint64_t`
-- For `sub`: Only applies if `X >= Y` (to avoid underflow)
+- `set X; add Y` folds only when `X + Y` fits in `uint64_t`.
+- `set X; sub Y` folds only when `X >= Y`.
+- Unsafe folds are left as runtime-checked instructions.
 
-**Examples**:
-```yascript
-set 10; add 5; print;      # Becomes: set 15 print (output: 15)
-set 100; sub 60; add 20; print;  # Becomes: set 40 add 20 print -> set 60 print (output: 60)
-```
+### 5. Dead Overwrite Elimination
 
----
-
-### 6. Dead Code Elimination: Sequential Overwrites
-
-#### 5a. Dead Set: `set X; set Y` → `set Y`
-
-**Pattern**: Two consecutive `set` operations
+**Pattern**: Writes that are immediately overwritten are removed.
 
 ```yascript
-set 10; set 20; print;     # Becomes: set 20 print (first set is dead)
-set 0; set 100; add 50; print;  # Becomes: set 100 add 50 print -> set 150 print
+set 10; set 20; print;     # set 20; print
+zero; set 50; print;       # set 50; print
+set 99; zero; print;       # zero; print
+zero; zero; add 5; print;  # zero; add 5; print
 ```
 
-**Why**: The first value is never used.
+### 6. Zero/Add Rewrites
 
-#### 5b. Dead Zero: `zero; set X` → `set X`
-
-**Pattern**: Zero followed by set
+**Pattern**: Adding to a known-zero cell becomes a set.
 
 ```yascript
-zero; set 50; print;      # Becomes: set 50 print
+zero; add 65; output;      # set 65; output
 ```
 
-**Why**: Setting to a value already zeros the cell.
+`set 0` is normalized to `zero`, so this also applies after `set 0`.
 
-#### 5c. Zero + Add: `zero; add X` → `set X`
+### 7. Dead Pointer Shifts Before Goto
 
-**Pattern**: Zero followed by add
+**Pattern**: A relative pointer shift immediately followed by an absolute `goto` is removed.
 
 ```yascript
-zero; add 65; output;     # Becomes: set 65 output
+left 10; goto 5; print;    # goto 5; print
+rght 100; goto 0;          # goto 0
 ```
 
-**Why**: Zero is an identity; adding to zero is equivalent to setting.
+Only pointer shifts are removed. Cell mutations and I/O instructions before `goto` are preserved.
 
-#### 5d. Set 0 + Add: `set 0; add X` → `add X`
+### 8. Consecutive Goto Elimination
 
-**Pattern**: Set 0 followed by add (identity)
-
-```yascript
-set 0; add 50; print;     # Becomes: add 50 print
-```
-
-**Why**: Adding to zero is equivalent to just adding.
-
-#### 5e. Dead Pointer Shifts Before Goto: `shift; goto X` → `goto X`
-
-**Pattern**: Pointer shift operation (`left`, `rght`) immediately before `goto`
-
-```yascript
-left 10; goto 5; print;   # Becomes: goto 5 print (left is dead)
-rght 100; goto 0;         # Becomes: goto 0 (rght is dead)
-```
-
-**Why**: A goto directly modifies the tape pointer, overriding any relative pointer movements immediately before it. Tape cell modifications (like `add`, `sub`, `set`, `zero`) are preserved.
-
-**Note**: I/O operations (`output`, `print`, `read`) are also NOT eliminated before gotos.
-
----
-
-### 7. Consecutive Goto Elimination: `goto X; goto Y;` → `goto Y`
-
-**Pattern**: Two consecutive `goto` operations
+**Pattern**: An absolute `goto` immediately overwritten by another absolute `goto` is removed.
 
 ```yascript
 goto 1; goto 2; add 10; print;
-# Becomes: goto 2; add 10; print;
+# goto 2; add 10; print;
 ```
 
-**Why**: The second `goto` immediately overrides the tape pointer destination set by the first `goto`, making the first `goto` dead code.
+## Control-Flow Safety
 
----
+Optimization can change instruction indexes, so the parser maintains an `oldToNew` map during each pass. After instructions are folded or removed, targets are remapped for:
 
-### 8. Zero Elimination: `zero; zero` → `zero`
+- `RepeatStart`
+- `RepeatEnd`
+- `Jump`
+- `JumpIfFalse`
 
-**Pattern**: Consecutive zero operations
+The parser also rebuilds repeat links before and after optimization. This keeps low-level `repeat` blocks and scripting-layer `if`/`while` jumps consistent after peephole rewrites.
 
-```yascript
-zero; zero; add 5; print;  # Becomes: zero add 5 print
-```
+## Multi-Pass Example
 
-**Why**: Zeroing an already-zero cell is redundant.
-
----
-
-## Multi-Pass Strategy
-
-The optimizer runs multiple passes because optimizations can create new optimization opportunities:
+Optimizations can create new optimization opportunities:
 
 ```yascript
 set 10; add 5; set 20; add 30;
-# Pass 1:
-#   set 10 add 5 → set 15
-#   set 15 set 20 → set 20 (dead set)
-#   set 20 add 30 → set 50
-#   Result: set 50
 ```
 
-**Safety limit**: Maximum 50 passes to prevent infinite loops.
+Pass results:
 
----
-
-## Interaction Examples
-
-These show how multiple optimizations work together:
-
-### Example 1: Tight Loop
 ```yascript
-repeat 5 add; end
-add 10;
-add 20;
-# Pass 1: repeat 5 add; end -> add 5
-# Pass 1: add 5; add 10; add 20; -> add 35
-# Final: add 35
+set 10; add 5;  # set 15
+set 15; set 20; # set 20
+set 20; add 30; # set 50
 ```
 
-### Example 2: Dead Code Removal
+Final result:
+
 ```yascript
-set 50; add 10; set 100; print;
-# Pass 1: set 50; add 10; -> set 60
-# Pass 1: set 60; set 100; -> set 100 (dead)
-# Final: set 100 print (output: 100)
+set 50
 ```
 
-### Example 3: Complex Pattern
-```yascript
-set 0; add 65; output; left 1; add 72; output;
-# Pass 1: set 0; add 65; -> set 65
-# Pass 1: output; left 1; add 72; -> (no merge, left-add different types)
-# Pass 2: output; left 1; -> (output stops merge)
-# Pass 2: left 1; add 72; -> (left-add different types)
-# Final: set 65; output; left 1; add 72; output;
-```
+## Runtime Optimizations
 
-### Example 4: Consecutive Gotos
-```yascript
-goto 1; goto 2; goto 3; add 10; print;
-# Pass 1: goto 1; goto 2; (consecutive) -> goto 2
-# Pass 2: goto 2; goto 3; (consecutive) -> goto 3
-# Final: goto 3; add 10; print;
-```
+The runner uses:
 
----
+- A dynamically growing `uint64_t` tape
+- Initial tape pre-sizing from `goto` targets and variable instruction operands
+- A 4KB output buffer
+- GCC/Clang computed-goto threaded dispatch when available
+- A switch-based VM fallback for other compilers
 
-## Performance Impact
+## Current Limits
 
-These optimizations provide significant benefits:
+The optimizer is intentionally conservative:
 
-1. **Fewer instructions**: Reduces memory usage and instruction cache pressure
-2. **Compile-time computation**: Values computed at compile time don't need runtime evaluation
-3. **Reduced loops**: Loop unwrapping eliminates loop overhead for simple operations
-4. **Better pipelining**: Fewer instructions = CPU pipeline more efficient
-
-**Benchmark note**: A program with 1000 `repeat 1 add; end` blocks becomes just `add 1000` after optimization.
-
----
-
-## Edge Cases Handled
-
-| Case | Behavior |
-|------|----------|
-| `repeat 0 op; end` | Optimizes to no operation |
-| `set UINT64_MAX; add 1;` | Reports value overflow at runtime |
-| `goto [past_end]` | Runtime safety check (handled by runner) |
-| `zero; zero; zero` | Merges to single `zero` |
-| `add 10; output; add 5;` | Keeps `add 10` and `add 5` separate (output breaks merge) |
-| `set X; print; set Y` | Keeps separate (print is I/O boundary) |
-
----
+- It does not currently constant-fold scripting expressions like `let x = 2 + 3`.
+- It does not eliminate temporary cells emitted while lowering expressions.
+- It does not perform global data-flow optimization.
+- It does not move code across I/O or control-flow boundaries.
 
 ## Testing Optimizations
 
-To verify optimizations are working:
+Core optimizer checks:
 
 ```bash
-# Compact form (should output 65)
-./yascript -e "repeat 65 add; end; output;"
-
-# Expanded form (equivalent, shows mergeable adds)
-./yascript -e "add 10; add 20; add 20; add 15; output;"
-
-# Dead code elimination
-./yascript -e "set 10; set 20; print;"    # Output: 20
-
-# Goto chaining
-./yascript -e "goto 1; goto 2; add 5; print;"  # Output: 5
-
-# Constant folding
-./yascript -e "set 50; add 15; print;"    # Output: 65
+make test
 ```
 
----
+Additional scripting checks:
 
-## Implementation Notes
+```bash
+./tests/run_scripting_tests.sh
+```
 
-- Optimizer runs before execution (compile-time only)
-- Uses `std::vector<Instruction>` for efficient manipulation
-- Multi-pass approach with cycle detection (50-pass limit)
-- Jump chain resolution uses recursion (depth limit 1000)
-- No dataflow analysis beyond immediate instruction patterns
+Useful spot checks:
 
----
-
-## Future Optimizations (Not Yet Implemented)
-
-- Dead code path elimination (unreachable code after unconditional jumps)
-- Register allocation (tracking which cells are actively used)
-- Loop invariant code motion
-- Common subexpression elimination
-- Peephole patterns for common idioms (e.g., multiply using nested loops)
+```bash
+./bin/yascript -e "repeat 65 add; end; output;"
+./bin/yascript -e "set 40; add 25; print;"
+./bin/yascript -e "goto 1; goto 2; add 5; print;"
+./bin/yascript -e "let i = 1; let s = 0; while i <= 5; s = s + i; i = i + 1; end; print s"
+```
