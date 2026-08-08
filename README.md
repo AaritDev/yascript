@@ -63,7 +63,7 @@ Run from a `.ys` file:
 |-------------------------|-----------------------------------------------|
 | `let x = expr`          | Declare a variable, optionally initialized    |
 | `let x`                 | Declare a variable, initialized to 0          |
-| `const N = expr`        | Declare a compile-time constant               |
+| `const N = expr`        | Declare a runtime constant               |
 | `x = expr`              | Assign to an existing variable                |
 | `print expr`            | Print expression value as a decimal number    |
 | `output expr`           | Output expression value as an ASCII character |
